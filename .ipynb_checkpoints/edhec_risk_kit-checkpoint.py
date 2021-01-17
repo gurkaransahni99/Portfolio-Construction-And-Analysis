@@ -84,4 +84,59 @@ def cvar_historic(r, level=5):
     else:
         raise TypeError("Expected series or dataframe")
 
+def annualize_returns(r, periods_per_year):
+    compounded_growth = (1+r).prod()
+    return compounded_growth**(periods_per_year/r.shape[0])-1;
         
+def annualize_vol(r, periods_per_year):
+    return r.std()*(periods_per_year**0.5)
+
+
+def sharpe_ratio(r, risk_free_rate, periods_per_year):
+    risk_free_rate = (1+risk_free_rate)**(1/periods_per_year)-1
+    excess_returns = r - risk_free_rate
+    return annualize_returns(excess_returns, periods_per_year)/annualize_vol(r, periods_per_year);
+
+def portfolio_returns(weights, returns):
+    return weights.T @ returns
+
+def portfolio_vol(weights, covMat):
+    return (weights.T @ covMat @ weights)**0.5
+
+def plot_ef2(n_points, er, cov):
+    weights = [np.array([w,1-w]) for w in np.linspace(0, 1, n_points)]
+    rets = [portfolio_returns(w, er) for w in weights]
+    volatility = [portfolio_vol(w, cov) for w in weights]
+    ef = pd.DataFrame({
+        "Returns": rets, 
+        "Volatility": volatility
+    })
+    return ef.plot.scatter(x = "Volatility", y = "Returns", style = "--")
+
+from scipy.optimize import minimize
+def minimize_vol(target_return, er, cov):
+    n = er.shape[0]
+    init_guess = np.repeat(1/n, n)
+    bounds =((0.0, 1.0),)*n
+    return_is_target = {
+        "type" : "eq",
+        "args" : (er,),
+        "fun" : lambda weights, er : target_return - portfolio_returns(weights, er)
+    }
+    
+    weights_sum_is_1 = {
+        "type" : "eq", 
+        "fun" : lambda weights : np.sum(weights) - 1
+    }
+    
+    results = minimize(portfolio_vol,
+                      init_guess,
+                      args = (cov,),
+                      method = "SLSQP",
+                      options = {"disp" : False},
+                      constraints = (return_is_target, weights_sum_is_1),
+                      bounds = bounds
+                      )
+    
+    return results.x
+    
