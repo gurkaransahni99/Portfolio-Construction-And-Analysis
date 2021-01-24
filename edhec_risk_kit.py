@@ -140,3 +140,65 @@ def minimize_vol(target_return, er, cov):
     
     return results.x
     
+def optimal_weights(n_points, er, cov):
+    target_ret = np.linspace(er.min(), er.max(), n_points)
+    weights = [minimize_vol(target_return, er, cov) for target_return in target_ret]
+    return weights
+
+def plot_ef(n_points, er, cov, show_cml=False, show_ew = False, show_gmv = False, risk_free_rate = 0):
+    weights = optimal_weights(n_points, er, cov)
+    rets = [portfolio_returns(w, er) for w in weights]
+    vols = [portfolio_vol(w, cov) for w in weights]
+    ef = pd.DataFrame({
+        "Returns": rets,
+        "Volatility": vols
+    })
+    ax = ef.plot.scatter(x = "Volatility", y = "Returns", style = "._")
+    if(show_cml):
+        ax.set_xlim(left = 0)
+        w_msr = msr(risk_free_rate, er, cov)
+        r_msr = portfolio_returns(w_msr, er)
+        v_msr = portfolio_vol(w_msr, cov)
+        cml_x = [0, v_msr]
+        cml_y = [risk_free_rate, r_msr]
+        ax.plot(cml_x, cml_y, color = "green", linestyle = "dashed")
+        
+    if(show_ew):
+        n = er.shape[0]
+        w_ew = np.repeat(1/n, n)
+        r_ew = portfolio_returns(w_ew, er)
+        v_ew = portfolio_vol(w_ew, cov)
+        
+        ax.plot([v_ew], [r_ew], color = "goldenrod", marker = "o", markersize = 7)
+        
+    if(show_gmv):
+        n = er.shape[0]
+        w_ew = msr(0, np.repeat(1, n), cov)
+        r_ew = portfolio_returns(w_ew, er)
+        v_ew = portfolio_vol(w_ew, cov)
+        
+        ax.plot([v_ew], [r_ew], color = "midnightblue", marker = "o", markersize = 7)
+        
+        
+def msr(risk_free_rate, er, cov):
+    n = er.shape[0]
+    init_guess = np.repeat(1/n, n)
+    bounds =((0.0, 1.0),)*n
+    weights_sum_is_1 = {
+        "type" : "eq", 
+        "fun" : lambda weights : np.sum(weights) - 1
+    }
+    
+    def neg_sharpe_ratio(weights, risk_free_rate, er, cov):
+        return - (portfolio_returns(weights, er) - risk_free_rate) / portfolio_vol(weights, cov)
+    
+    results = minimize(neg_sharpe_ratio,
+                      init_guess,
+                      args = (risk_free_rate, er, cov, ),
+                      method = "SLSQP",
+                      options = {"disp" : False},
+                      constraints = (weights_sum_is_1),
+                      bounds = bounds
+                      )
+    
+    return results.x
